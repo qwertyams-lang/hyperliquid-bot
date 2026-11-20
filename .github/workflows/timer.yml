@@ -1,0 +1,30 @@
+name: Hyperliquid Ratio Bot
+
+on:
+  schedule:
+    - cron: '*/5 * * * *' # Draait elke 5 minuten (verander naar '* * * * *' voor elke minuut)
+  workflow_dispatch:      # Hiermee kun je hem altijd handmatig testen met 1 klik!
+
+permissions:
+  contents: write         # Nodig om het geheugen (state.json) op te slaan
+
+jobs:
+  check-ratio:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Run Bot
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+        run: node bot.js
+      - name: Save state
+        run: |
+          git config --local user.email "bot@github.com"
+          git config --local user.name "Ratio Bot"
+          git add -A
+          git diff-index --quiet HEAD || git commit -m "Update state"
+          git push
