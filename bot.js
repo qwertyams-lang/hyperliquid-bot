@@ -3,37 +3,39 @@ const http = require("http");
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const CHAT_ID = process.env.CHAT_ID;
 const TARGET_RATIO = 1.18;
-const CHECK_INTERVAL_MS = 5 * 60 * 1000; // Elke 5 minuten (verander 5 naar 1 voor elke minuut)
+const CHECK_INTERVAL_MS = 5 * 60 * 1000; // Elke 5 minuten
 
 let lastState = null;
 let lastStatusLog = "Bot is net opgestart, eerste check bezig...";
 
 async function checkRatio() {
   try {
-    const [mainRes, xyzRes] = await Promise.all([
-      fetch("https://hyperliquid.xyz", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "allMids" }),
+    // Haal HYPE en Hyperliquid Strategies (PURR / xyz:PURRDAT) op via CoinGecko (geen 403 datacenter blokkade)
+    const [hypeRes, purrRes] = await Promise.all([
+      fetch("https://coingecko.com", {
+        headers: { "Accept": "application/json", "User-Agent": "HyperliquidRatioBot/1.0" }
       }),
-      fetch("https://hyperliquid.xyz", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "allMids", dex: "xyz" }),
-      }),
+      fetch("https://coingecko.com", {
+        headers: { "Accept": "application/json", "User-Agent": "HyperliquidRatioBot/1.0" }
+      })
     ]);
 
-    if (!mainRes.ok || !xyzRes.ok) {
-      lastStatusLog = `API fout: ${mainRes.status} / ${xyzRes.status}`;
+    if (!hypeRes.ok || !purrRes.ok) {
+      lastStatusLog = `Data API fout: ${hypeRes.status} / ${purrRes.status}`;
       console.log(lastStatusLog);
       return;
     }
 
-    const mainPrices = await mainRes.json();
-    const xyzPrices = await xyzRes.json();
+    const hypeData = await hypeRes.json();
+    const purrData = await purrRes.json();
 
-    const hypePrice = parseFloat(mainPrices["HYPE"]);
-    const purrDatPrice = parseFloat(xyzPrices["xyz:PURRDAT"]);
+    const hypePrice = parseFloat(hypeData?.hyperliquid?.usd);
+
+    // Zoek specifiek het Hyperliquid (xyz:PURRDAT) contract op tussen de tickers
+    const hlTicker = purrData?.tickers?.find(
+      (t) => t.market?.identifier?.toLowerCase().includes("hyperliquid") || t.base?.toUpperCase().includes("PURRDAT")
+    );
+    const purrDatPrice = parseFloat(hlTicker?.last || purrData?.tickers?.[0]?.last);
 
     if (!hypePrice || !purrDatPrice) {
       lastStatusLog = `Prijzen niet gevonden: HYPE=${hypePrice}, PURRDAT=${purrDatPrice}`;
@@ -81,11 +83,9 @@ async function checkRatio() {
   }
 }
 
-// Start direct bij opstarten en herhaal daarna elke 5 minuten
 checkRatio();
 setInterval(checkRatio, CHECK_INTERVAL_MS);
 
-// Houd een simpele statuspagina open (zodat Koyeb ziet dat de app leeft en jij hem op je telefoon kunt bekijken)
 const PORT = process.env.PORT || 8000;
 http.createServer((req, res) => {
   res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
